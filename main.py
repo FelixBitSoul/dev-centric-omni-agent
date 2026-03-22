@@ -1,8 +1,12 @@
 import os
-from typing import Dict, Any, Optional
+import json
+import asyncio
+from typing import Dict, Any, Optional, List
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 from typing_extensions import TypedDict
 
@@ -20,26 +24,31 @@ deepseek_model = ChatOpenAI(
 )
 
 # 定义状态结构
-# 有状态 (State) 是指在工作流执行过程中，能够存储和传递信息的数据结构
-# 在 LangGraph 中，State 是一个字典或类，用于在不同节点之间传递数据
-# 每次节点执行后，都会返回一个新的 State 对象，包含更新后的信息
 class AgentState(TypedDict):
     """Agent 状态类"""
     # 用户输入的研究课题
     topic: str
-    # 是否需要搜索
-    need_search: bool
+    # 路由决策
+    router_decision: Optional[Dict[str, Any]]
+    # 搜索关键词列表
+    queries: Optional[List[str]]
     # 搜索结果
-    search_results: Optional[str]
+    search_results: Optional[List[Dict[str, Any]]]
     # 最终总结
     summary: Optional[str]
+    # 思考轨迹
+    steps: List[str]
+
+# JSON 输出解析器
+router_parser = JsonOutputParser()
 
 # 定义节点函数
 
-def check_need_search(state: Dict[str, Any]) -> Dict[str, Any]:
-    """判断是否需要搜索
+def router(state: Dict[str, Any]) -> Dict[str, Any]:
+    """智能路由决策节点
     
-    这个节点会分析用户的研究课题，判断是否需要联网搜索获取最新信息
+    分析用户问题，决定是直接回答还是需要搜索
+    输出 JSON 格式的决策结果
     
     Args:
         state: 当前状态
@@ -47,33 +56,62 @@ def check_need_search(state: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         更新后的状态
     """
-    # 构建提示词，让模型判断是否需要搜索
-    prompt = f"""请判断以下研究课题是否需要联网搜索获取最新信息：
+    steps = state.get('steps', [])
+    steps.append("开始分析用户问题，决定处理策略")
+    
+    # 构建提示词
+    prompt = f"""你是一个智能决策系统，需要分析用户的研究课题，决定处理策略。
     
     研究课题：{state['topic']}
     
-    请回答 '是' 或 '否'，并简要说明原因。"""
+    请分析这个问题：
+    1. 是否需要联网搜索获取最新信息？
+    2. 如果需要搜索，请拆解出 2-3 个精准的搜索关键词
+    3. 给出决策理由
+    
+    请严格按照以下 JSON 格式输出：
+    {{"action": "search" | "direct_answer", "queries": ["关键词1", "关键词2", "关键词3"], "reason": "决策理由"}}
+    
+    注意：
+    - action 只能是 "search" 或 "direct_answer"
+    - 如果 action 是 "search"，queries 必须包含 2-3 个精准的搜索关键词
+    - 如果 action 是 "direct_answer"，queries 可以是空列表
+    """
+    
+    print("\033[94m[Router Node]\033[0m 正在分析用户问题，决定处理策略...")
     
     # 调用模型
-    print("正在调用 DeepSeek 模型分析研究课题...")
     response = deepseek_model.invoke(prompt)
     
-    # 解析回答
-    answer = response.content.strip().lower()
-    need_search = "是" in answer
+    # 解析 JSON 输出
+    try:
+        decision = json.loads(response.content)
+        print(f"\033[94m[Router Node]\033[0m 决策结果: {decision['action']}")
+        if decision['action'] == 'search' and decision.get('queries'):
+            print(f"\033[94m[Router Node]\033[0m 搜索关键词: {decision['queries']}")
+        print(f"\033[94m[Router Node]\033[0m 决策理由: {decision['reason']}")
+    except json.JSONDecodeError:
+        # 如果模型输出不是有效的 JSON，默认需要搜索
+        print("\033[91m[Router Node]\033[0m 模型输出不是有效的 JSON，默认需要搜索")
+        decision = {
+            "action": "search",
+            "queries": [state['topic']],
+            "reason": "模型输出格式错误，默认需要搜索"
+        }
     
-    if need_search:
-        print("分析结果：需要联网搜索获取最新信息")
-    else:
-        print("分析结果：不需要联网搜索，使用模型已有知识")
+    steps.append(f"决策: {decision['action']}")
     
     # 返回更新后的状态
-    return {"need_search": need_search}
+    return {
+        "router_decision": decision,
+        "queries": decision.get('queries', []),
+        "steps": steps
+    }
 
-def search_web(state: Dict[str, Any]) -> Dict[str, Any]:
-    """搜索网页
+async def search_web(state: Dict[str, Any]) -> Dict[str, Any]:
+    """搜索网页节点
     
-    这个节点会使用 TavilySearch 工具搜索相关信息
+    并发处理所有搜索关键词，获取搜索结果
     
     Args:
         state: 当前状态
@@ -81,33 +119,64 @@ def search_web(state: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         更新后的状态
     """
-    # 执行搜索
-    print(f"正在使用 Tavily 搜索 '{state['topic']}' 的相关信息...")
-    results = tavily_search.invoke(state['topic'])
+    steps = state.get('steps', [])
+    steps.append("开始执行网络搜索")
     
-    # 处理搜索结果
-    if isinstance(results, dict):
-        # 检查 results 的结构
-        if 'results' in results:
-            # 如果 results 是一个包含 'results' 键的字典
-            search_results = "\n".join([f"- {result['title']}: {result['url']}\n  {result['content'][:200]}..." for result in results['results'][:3]])
-            print(f"搜索完成，找到 {len(results['results'])} 条结果，使用前 3 条进行分析")
-        else:
-            # 如果 results 是一个其他结构的字典
-            search_results = str(results)
-            print("搜索完成，获取到搜索结果")
-    else:
-        # 如果 results 是一个列表
-        search_results = "\n".join([f"- {result['title']}: {result['url']}\n  {result['content'][:200]}..." for result in results[:3]])
-        print(f"搜索完成，找到 {len(results)} 条结果，使用前 3 条进行分析")
+    queries = state.get('queries', [])
+    if not queries:
+        queries = [state['topic']]
+    
+    print(f"\033[92m[Search Node]\033[0m 正在搜索 {len(queries)} 个关键词...")
+    
+    # 并发执行搜索
+    async def search_query(query):
+        try:
+            print(f"\033[92m[Search Node]\033[0m 搜索: {query}")
+            results = tavily_search.invoke(query, max_results=3)
+            return results
+        except Exception as e:
+            print(f"\033[91m[Search Node]\033[0m 搜索 {query} 时出错: {e}")
+            return []
+    
+    # 执行并发搜索
+    search_tasks = [search_query(query) for query in queries]
+    search_results_list = await asyncio.gather(*search_tasks)
+    
+    # 聚合搜索结果
+    aggregated_results = []
+    for i, results in enumerate(search_results_list):
+        query = queries[i]
+        if isinstance(results, dict) and 'results' in results:
+            for result in results['results']:
+                aggregated_results.append({
+                    "query": query,
+                    "title": result.get('title', ''),
+                    "url": result.get('url', ''),
+                    "content": result.get('content', '')
+                })
+        elif isinstance(results, list):
+            for result in results:
+                aggregated_results.append({
+                    "query": query,
+                    "title": result.get('title', ''),
+                    "url": result.get('url', ''),
+                    "content": result.get('content', '')
+                })
+    
+    print(f"\033[92m[Search Node]\033[0m 搜索完成，共获取 {len(aggregated_results)} 条结果")
+    
+    steps.append(f"完成搜索，获取 {len(aggregated_results)} 条结果")
     
     # 返回更新后的状态
-    return {"search_results": search_results}
+    return {
+        "search_results": aggregated_results,
+        "steps": steps
+    }
 
 def summarize(state: Dict[str, Any]) -> Dict[str, Any]:
-    """总结信息
+    """总结信息节点
     
-    这个节点会根据搜索结果（如果有）和模型知识，生成最终总结
+    根据搜索结果（如果有）和模型知识，生成最终总结
     
     Args:
         state: 当前状态
@@ -115,50 +184,69 @@ def summarize(state: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         更新后的状态
     """
+    steps = state.get('steps', [])
+    steps.append("开始生成总结报告")
+    
+    print("\033[93m[Summarize Node]\033[0m 正在生成总结报告...")
+    
+    # 构建系统提示词
+    system_prompt = "你是一位首席技术分析师，擅长分析技术问题并提供专业、详细的分析报告。"
+    
     # 构建提示词
     if state.get('search_results'):
-        prompt = f"""请基于以下搜索结果，对研究课题进行详细总结，以 Markdown 格式输出：
+        # 格式化搜索结果
+        formatted_results = ""
+        for i, result in enumerate(state['search_results'][:6]):  # 最多使用前6条结果
+            formatted_results += f"\n[{i+1}] {result['title']}\nURL: {result['url']}\n内容: {result['content'][:300]}...\n"
+        
+        prompt = f"""{system_prompt}
+        
+        请基于以下搜索结果，对研究课题进行详细分析，输出专业的技术分析报告：
         
         研究课题：{state['topic']}
         
         搜索结果：
-        {state['search_results']}
+        {formatted_results}
         
-        总结要求：
-        1. 以 Markdown 格式输出
-        2. 结构清晰，包含标题、简介、主要内容、结论等部分
-        3. 语言流畅，逻辑连贯
-        4. 确保信息准确，引用搜索结果中的内容
+        报告要求：
+        1. 必须包含以下三个部分：
+           - 核心结论 (Executive Summary)：简要概括主要发现和结论
+           - 详细分析 (Detailed Analysis)：深入分析问题，提供专业见解
+           - 来源引用 (References)：列出使用的信息来源
+        2. 语言专业、准确，逻辑清晰
+        3. 确保信息准确，引用搜索结果中的内容
         """
     else:
-        prompt = f"""请对以下研究课题进行详细总结，以 Markdown 格式输出：
+        prompt = f"""{system_prompt}
+        
+        请对以下研究课题进行详细分析，输出专业的技术分析报告：
         
         研究课题：{state['topic']}
         
-        总结要求：
-        1. 以 Markdown 格式输出
-        2. 结构清晰，包含标题、简介、主要内容、结论等部分
-        3. 语言流畅，逻辑连贯
+        报告要求：
+        1. 必须包含以下三个部分：
+           - 核心结论 (Executive Summary)：简要概括主要发现和结论
+           - 详细分析 (Detailed Analysis)：深入分析问题，提供专业见解
+           - 来源引用 (References)：如果使用了模型内置知识，请注明
+        2. 语言专业、准确，逻辑清晰
+        3. 基于你的知识提供高水平的分析
         """
     
     # 调用模型生成总结
-    print("正在调用 DeepSeek 模型生成总结...")
     response = deepseek_model.invoke(prompt)
-    print("总结生成完成！")
+    print("\033[93m[Summarize Node]\033[0m 总结报告生成完成！")
+    
+    steps.append("总结报告生成完成")
     
     # 返回更新后的状态
-    return {"summary": response.content}
+    return {
+        "summary": response.content,
+        "steps": steps
+    }
 
 # 定义条件边函数
 def should_search(state: Dict[str, Any]) -> str:
     """判断是否需要搜索的条件边
-    
-    循环逻辑是指在工作流中，根据条件判断决定是否重复执行某些节点
-    在本项目中，循环逻辑体现在：
-    1. 首先判断是否需要搜索
-    2. 如果需要搜索，执行搜索节点，然后进入总结节点
-    3. 如果不需要搜索，直接进入总结节点
-    4. 总结节点执行完毕后，工作流结束
     
     Args:
         state: 当前状态
@@ -166,28 +254,27 @@ def should_search(state: Dict[str, Any]) -> str:
     Returns:
         下一个节点的名称
     """
-    if state.get('need_search', False):
+    decision = state.get('router_decision', {})
+    if decision.get('action') == 'search':
         return "search_web"
     else:
         return "summarize"
 
 # 构建工作流
-# StateGraph 是 LangGraph 中用于构建有状态工作流的核心类
-# 它允许我们定义节点和边，形成一个有向图结构
 workflow = StateGraph(AgentState)
 
 # 添加节点
-workflow.add_node("check_need_search", check_need_search)  # 判断是否需要搜索
+workflow.add_node("router", router)  # 智能路由决策
 workflow.add_node("search_web", search_web)  # 搜索网页
 workflow.add_node("summarize", summarize)  # 总结信息
 
 # 设置入口点
-workflow.set_entry_point("check_need_search")
+workflow.set_entry_point("router")
 
 # 添加边
-# 从 check_need_search 节点到其他节点的条件边
+# 从 router 节点到其他节点的条件边
 workflow.add_conditional_edges(
-    "check_need_search",
+    "router",
     should_search,
     {
         "search_web": "search_web",
@@ -206,8 +293,6 @@ app = workflow.compile()
 
 # 主函数
 if __name__ == "__main__":
-    # 初始化对话历史
-    
     print("=== DeepSeek 智能联网 Agent ===")
     print("输入 'exit' 或 '退出' 结束对话\n")
     
@@ -221,13 +306,24 @@ if __name__ == "__main__":
             break
         
         print(f"\n研究课题：{topic}")
-        print("正在分析是否需要搜索...")
         
         # 执行工作流
-        result = app.invoke({"topic": topic, "need_search": False, "search_results": None, "summary": None})
+        result = app.invoke({
+            "topic": topic,
+            "router_decision": None,
+            "queries": [],
+            "search_results": None,
+            "summary": None,
+            "steps": []
+        })
         
         # 输出结果
         print("\n=== 研究总结 ===\n")
         print(result["summary"])
-
+        
+        # 输出思考轨迹
+        print("\n=== 思考轨迹 ===\n")
+        for i, step in enumerate(result.get("steps", []), 1):
+            print(f"{i}. {step}")
+        
         print("\n")
