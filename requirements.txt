@@ -4,3 +4,6 @@ langchain-community
 langchain-core
 python-dotenv
 tavily-python
+instructor
+pydantic
+

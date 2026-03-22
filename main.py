@@ -5,10 +5,20 @@ from typing import Dict, Any, Optional, List
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 from typing_extensions import TypedDict
+from pydantic import BaseModel
+
+# 定义决策结构的Pydantic模型
+class RouterDecision(BaseModel):
+    action: str  # search 或 direct_answer
+    queries: List[str]  # 搜索关键词列表
+    reason: str  # 决策理由
+
+# 创建Pydantic输出解析器
+router_parser = PydanticOutputParser(pydantic_object=RouterDecision)
 
 # 加载环境变量
 load_dotenv()
@@ -39,8 +49,7 @@ class AgentState(TypedDict):
     # 思考轨迹
     steps: List[str]
 
-# JSON 输出解析器
-router_parser = JsonOutputParser()
+
 
 # 定义节点函数
 
@@ -48,7 +57,7 @@ def router(state: Dict[str, Any]) -> Dict[str, Any]:
     """智能路由决策节点
     
     分析用户问题，决定是直接回答还是需要搜索
-    输出 JSON 格式的决策结果
+    使用LangChain的PydanticOutputParser进行结构化输出
     
     Args:
         state: 当前状态
@@ -59,7 +68,7 @@ def router(state: Dict[str, Any]) -> Dict[str, Any]:
     steps = state.get('steps', [])
     steps.append("开始分析用户问题，决定处理策略")
     
-    # 构建提示词
+    # 构建提示词，包含解析器的格式说明
     prompt = f"""你是一个智能决策系统，需要分析用户的研究课题，决定处理策略。
     
     研究课题：{state['topic']}
@@ -69,8 +78,8 @@ def router(state: Dict[str, Any]) -> Dict[str, Any]:
     2. 如果需要搜索，请拆解出 2-3 个精准的搜索关键词
     3. 给出决策理由
     
-    请严格按照以下 JSON 格式输出：
-    {{"action": "search" | "direct_answer", "queries": ["关键词1", "关键词2", "关键词3"], "reason": "决策理由"}}
+    请按照以下格式输出：
+    {router_parser.get_format_instructions()}
     
     注意：
     - action 只能是 "search" 或 "direct_answer"
@@ -82,29 +91,37 @@ def router(state: Dict[str, Any]) -> Dict[str, Any]:
     
     # 调用模型
     response = deepseek_model.invoke(prompt)
+    print(f"router模型输出: {response.content}")
     
-    # 解析 JSON 输出
+    # 使用PydanticOutputParser解析输出
     try:
-        decision = json.loads(response.content)
-        print(f"\033[94m[Router Node]\033[0m 决策结果: {decision['action']}")
-        if decision['action'] == 'search' and decision.get('queries'):
-            print(f"\033[94m[Router Node]\033[0m 搜索关键词: {decision['queries']}")
-        print(f"\033[94m[Router Node]\033[0m 决策理由: {decision['reason']}")
-    except json.JSONDecodeError:
-        # 如果模型输出不是有效的 JSON，默认需要搜索
-        print("\033[91m[Router Node]\033[0m 模型输出不是有效的 JSON，默认需要搜索")
-        decision = {
+        decision = router_parser.parse(response.content)
+        print(f"\033[94m[Router Node]\033[0m 决策结果: {decision.action}")
+        if decision.action == 'search' and decision.queries:
+            print(f"\033[94m[Router Node]\033[0m 搜索关键词: {decision.queries}")
+        print(f"\033[94m[Router Node]\033[0m 决策理由: {decision.reason}")
+        
+        # 将Pydantic模型转换为字典
+        decision_dict = {
+            "action": decision.action,
+            "queries": decision.queries,
+            "reason": decision.reason
+        }
+    except Exception as e:
+        # 如果模型输出不是有效的格式，默认需要搜索
+        print(f"\033[91m[Router Node]\033[0m 模型输出解析错误: {e}，默认需要搜索")
+        decision_dict = {
             "action": "search",
             "queries": [state['topic']],
             "reason": "模型输出格式错误，默认需要搜索"
         }
     
-    steps.append(f"决策: {decision['action']}")
+    steps.append(f"决策: {decision_dict['action']}")
     
     # 返回更新后的状态
     return {
-        "router_decision": decision,
-        "queries": decision.get('queries', []),
+        "router_decision": decision_dict,
+        "queries": decision_dict.get('queries', []),
         "steps": steps
     }
 
@@ -292,7 +309,7 @@ workflow.add_edge("summarize", END)
 app = workflow.compile()
 
 # 主函数
-if __name__ == "__main__":
+async def run_agent():
     print("=== DeepSeek 智能联网 Agent ===")
     print("输入 'exit' 或 '退出' 结束对话\n")
     
@@ -307,8 +324,8 @@ if __name__ == "__main__":
         
         print(f"\n研究课题：{topic}")
         
-        # 执行工作流
-        result = app.invoke({
+        # 执行工作流（使用异步调用）
+        result = await app.ainvoke({
             "topic": topic,
             "router_decision": None,
             "queries": [],
@@ -327,3 +344,7 @@ if __name__ == "__main__":
             print(f"{i}. {step}")
         
         print("\n")
+
+if __name__ == "__main__":
+    # 使用 asyncio 运行
+    asyncio.run(run_agent())
