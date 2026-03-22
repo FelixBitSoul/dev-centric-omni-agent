@@ -188,10 +188,11 @@ async def search_web(state: Dict[str, Any]) -> Dict[str, Any]:
         "steps": steps
     }
 
-def summarize(state: Dict[str, Any]) -> Dict[str, Any]:
+async def summarize(state: Dict[str, Any]) -> Dict[str, Any]:
     """总结信息节点
     
     根据搜索结果（如果有）和模型知识，生成最终总结
+    支持流式输出
     
     Args:
         state: 当前状态
@@ -202,7 +203,7 @@ def summarize(state: Dict[str, Any]) -> Dict[str, Any]:
     steps = state.get('steps', [])
     steps.append("开始生成总结报告")
     
-    print("\033[93m[Summarize Node]\033[0m 正在生成总结报告...")
+    print("\033[93m[Summarize Node]\033[0m 正在生成总结报告...\n")
     
     # 构建系统提示词
     system_prompt = "你是一位首席技术分析师，擅长分析技术问题并提供专业、详细的分析报告。"
@@ -247,15 +248,21 @@ def summarize(state: Dict[str, Any]) -> Dict[str, Any]:
         3. 基于你的知识提供高水平的分析
         """
     
-    # 调用模型生成总结
-    response = deepseek_model.invoke(prompt)
-    print("\033[93m[Summarize Node]\033[0m 总结报告生成完成！")
+    # 使用 astream 获取模型的流式输出
+    full_response = ""
+    async for chunk in deepseek_model.astream(prompt):
+        content = chunk.content
+        full_response += content
+        # 实时打印到终端 (flush=True 确保立即显示)
+        print(content, end="", flush=True)
+    
+    print("\n\n\033[93m[Summarize Node]\033[0m 总结报告生成完成！")
     
     steps.append("总结报告生成完成")
     
     # 返回更新后的状态
     return {
-        "summary": response.content,
+        "summary": full_response,
         "steps": steps
     }
 
@@ -312,36 +319,42 @@ async def run_agent():
     print("输入 'exit' 或 '退出' 结束对话\n")
     
     while True:
-        # 获取用户输入
         topic = input("请输入研究课题：")
-        
-        # 检查是否退出
         if topic.lower() in ['exit', '退出']:
             print("对话结束，再见！")
             break
         
         print(f"\n研究课题：{topic}")
         
-        # 执行工作流（使用异步调用）
-        result = await app.ainvoke({
-            "topic": topic,
-            "router_decision": None,
-            "queries": [],
-            "search_results": None,
-            "summary": None,
-            "steps": []
-        })
+        inputs = {"topic": topic, "steps": []}
+        final_state = inputs # 用于存储最终结果
         
-        # 输出结果
-        print("\n=== 研究总结 ===\n")
-        print(result["summary"])
+        # 使用 astream 运行工作流
+        async for event in app.astream(inputs, stream_mode="updates"):
+            # 更新最终状态，这样最后就不需要再 invoke 一次了
+            for node_name, output in event.items():
+                final_state.update(output)
+                
+                # 路由节点信息打印
+                if node_name == "router":
+                    decision = output.get("router_decision", {})
+                    print(f"\n\033[94m[Router]\033[0m 决策: {decision.get('action')}")
+                    if decision.get('action') == 'search' and decision.get('queries'):
+                        print(f"\033[94m[Router]\033[0m 搜索关键词: {decision.get('queries')}")
+                    print(f"\033[94m[Router]\033[0m 决策理由: {decision.get('reason')}")
+                
+                # 搜索节点信息打印
+                elif node_name == "search_web":
+                    results = output.get("search_results", [])
+                    print(f"\n\033[92m[Search]\033[0m 找到 {len(results)} 条相关信息")
+
+        # 输出结果已经由 summarize 节点在流式过程中打印了
         
-        # 输出思考轨迹
-        print("\n=== 思考轨迹 ===\n")
-        for i, step in enumerate(result.get("steps", []), 1):
+        # 直接从 final_state 输出思考轨迹，无需二次 invoke
+        print("\n\n=== 思考轨迹 ===")
+        for i, step in enumerate(final_state.get("steps", []), 1):
             print(f"{i}. {step}")
-        
-        print("\n")
+        print("\n" + "="*30 + "\n")
 
 if __name__ == "__main__":
     # 使用 asyncio 运行
