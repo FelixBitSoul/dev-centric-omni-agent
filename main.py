@@ -1,12 +1,10 @@
 import os
-import json
 import asyncio
 from typing import Dict, Any, Optional, List
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
 from langchain_core.output_parsers import PydanticOutputParser
-from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 from typing_extensions import TypedDict
 from pydantic import BaseModel

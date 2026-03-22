@@ -21,9 +21,17 @@
 
 ## 需求规划 (Roadmap)
 
-### 第一阶段：智能情报员（已完成基础）
-- **核心功能**：输入一个模糊的开发问题，Agent 自动拆解关键词，联网搜索，输出结构化报告
-- **优化点**：引入 JSON 决策路由，让模型自己决定是"直接回答"还是"搜索后再回答"
+### 第一阶段：智能情报员（已完成）
+- **核心功能**：
+  - 输入模糊的开发问题，Agent 自动分析并拆解 2-3 个精准搜索关键词
+  - 智能判断是否需要联网搜索，支持"直接回答"和"搜索后回答"两种模式
+  - 异步并发搜索多个关键词，获取高质量网络资源
+  - 以"首席技术分析师"角色输出包含核心结论、详细分析和来源引用的专业报告
+- **技术实现**：
+  - 使用 PydanticOutputParser 进行结构化输出，确保格式一致性
+  - 基于 LangGraph 构建异步工作流，提高性能
+  - 完善的错误处理机制，确保系统稳定性
+  - 彩色日志输出，提供清晰的执行轨迹
 
 ### 第二阶段：私有上下文感知（接入 MCP）
 - **核心功能**：通过 MCP Filesystem Server，让 Agent 具备 `read_file` 和 `list_directory` 能力
@@ -46,23 +54,27 @@
 ### 核心节点逻辑设计
 
 #### Router (决策者)：
-- 判断任务类型：是"纯知识问答"、"需要联网"还是"需要查看本地代码"？
-- 输出格式： `{"action": "search" | "mcp_read" | "final_answer", "params": {...}}`
-
-#### MCP Tool Node (本地执行器)：
-```python
-# 模拟 MCP 读取本地文件的逻辑
-async def call_mcp_filesystem(state):
-    # 使用 mcp-python-sdk 连接本地 server
-    # 读取当前项目的 README.md 或 main.py
-    return {"local_context" : file_content}
-```
+- 判断任务类型：是"纯知识问答"还是"需要联网"？
+- 使用 PydanticOutputParser 进行结构化输出
+- 输出格式：包含 action (search/direct_answer)、queries (搜索关键词列表) 和 reason (决策理由)
+- 自动拆解 2-3 个精准的搜索关键词
 
 #### Search Node (外部执行器)：
-- 调用 Tavily，并行搜索多个关键词
+- 异步并发处理多个搜索关键词
+- 使用 TavilySearch 获取高质量搜索结果
+- 聚合搜索结果，保留 title、url、content 字段
 
-#### Synthesizer (汇总者)：
-- 将 local_context (本地代码) 和 search_results (网上文档) 喂给 DeepSeek
+#### Summarize Node (汇总者)：
+- 设定 DeepSeek 为"首席技术分析师"角色
+- 输出包含核心结论、详细分析和来源引用的专业报告
+- 支持有搜索结果和无搜索结果两种模式
+
+### 技术优势
+
+- **结构化输出**：使用 Pydantic 确保输出格式的一致性和可靠性
+- **异步执行**：使用 LangGraph 的异步 API 处理网络请求，提高性能
+- **错误处理**：完善的异常处理机制，确保系统稳定性
+- **智能路由**：基于问题性质自动选择最佳处理策略
 
 ## 项目结构
 
@@ -78,8 +90,10 @@ my-ai-agent/
 
 - **LangGraph**: 构建有状态的 Agent 工作流
 - **LangChain OpenAI**: 与 DeepSeek API 交互
+- **LangChain Core**: 提供核心功能，包括 PydanticOutputParser
 - **Tavily Search**: 联网搜索工具
 - **Python Dotenv**: 环境变量管理
+- **Pydantic**: 用于定义数据模型和结构化输出
 
 ## 快速开始
 
@@ -123,16 +137,16 @@ python main.py
 ```
 用户输入
     ↓
-[判断是否需要搜索] → 是 → [联网搜索] → [生成总结] → 结束
-    ↓ 否
-[生成总结] → 结束
+[Router 智能决策] → 搜索 → [Search 并发搜索] → [Summarize 专业总结] → 结束
+    ↓ 直接回答
+[Summarize 专业总结] → 结束
 ```
 
 ## 核心节点
 
-1. **check_need_search**: 调用 DeepSeek 模型分析课题，判断搜索必要性
-2. **search_web**: 使用 Tavily 搜索相关网络资源
-3. **summarize**: 整合信息，生成 Markdown 格式的研究总结
+1. **router**: 使用 PydanticOutputParser 分析课题，决定处理策略并拆解搜索关键词
+2. **search_web**: 异步并发处理多个搜索关键词，获取高质量搜索结果
+3. **summarize**: 以"首席技术分析师"角色生成包含核心结论、详细分析和来源引用的专业报告
 
 ## 愿景
 
