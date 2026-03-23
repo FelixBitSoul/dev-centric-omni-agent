@@ -106,8 +106,11 @@
 ```
 my-ai-agent/
 ├── main.py           # 主程序入口
-├── requirements.txt  # Python 依赖
+├── pyproject.toml    # 项目配置和依赖管理
+├── uv.lock           # 依赖锁定文件
+├── .python-version   # Python 版本管理
 ├── .env             # 环境变量配置（不提交到 Git）
+├── .gitignore       # Git 忽略文件
 └── README.md        # 项目说明文档
 ```
 
@@ -124,8 +127,14 @@ my-ai-agent/
 
 ### 1. 安装依赖
 
+本项目使用 [uv](https://github.com/astral-sh/uv) 进行依赖管理，确保你已经安装了 uv：
+
 ```bash
-pip install -r requirements.txt
+# 安装 uv（如果还没有安装）
+pip install uv
+
+# 安装项目依赖
+uv sync
 ```
 
 ### 2. 配置环境变量
