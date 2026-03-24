@@ -1,7 +1,6 @@
-import asyncio
 from typing import Dict, Any
 
-from src.models import deepseek_model
+from src.models import get_deepseek_model
 from src.prompts import build_summarize_prompt
 
 
@@ -13,6 +12,7 @@ async def summarize(state: Dict[str, Any]) -> Dict[str, Any]:
 
     prompt = build_summarize_prompt(state['topic'], state.get('search_results'))
 
+    deepseek_model = get_deepseek_model()
     full_response = ""
     async for chunk in deepseek_model.astream(prompt):
         content = chunk.content

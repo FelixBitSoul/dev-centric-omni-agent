@@ -1,6 +1,6 @@
 from typing import Dict, Any
 
-from src.models import deepseek_model, router_parser
+from src.models import router_parser, get_deepseek_model
 from src.prompts import build_router_prompt
 
 
@@ -12,6 +12,7 @@ def router(state: Dict[str, Any]) -> Dict[str, Any]:
 
     print("\033[94m[Router Node]\033[0m 正在分析用户问题，决定处理策略...")
 
+    deepseek_model = get_deepseek_model()
     response = deepseek_model.invoke(prompt)
     print(f"router模型输出: {response.content}")
 

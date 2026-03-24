@@ -1,7 +1,7 @@
 import asyncio
 from typing import Dict, Any
 
-from src.models import tavily_search
+from src.models import get_tavily_search
 
 
 async def search_web(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -13,6 +13,8 @@ async def search_web(state: Dict[str, Any]) -> Dict[str, Any]:
         queries = [state['topic']]
 
     print(f"\033[92m[Search Node]\033[0m 正在搜索 {len(queries)} 个关键词...")
+
+    tavily_search = get_tavily_search()
 
     async def search_query(query):
         try:
