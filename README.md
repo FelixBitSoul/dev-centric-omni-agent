@@ -1,6 +1,6 @@
-# DeepSeek 智能联网 Agent
+# DeepSeek 智能联网 Agent (MCP 版)
 
-一个基于 LangGraph 构建的智能研究 Agent，结合 DeepSeek 大语言模型和 Tavily 搜索引擎，能够自动判断研究课题是否需要联网搜索，并生成结构化的研究总结。
+一个基于 LangGraph 构建的智能研究 Agent，结合 DeepSeek 大语言模型和 Tavily MCP Server，通过 LLM 自主决策工具调用，生成结构化的研究总结。
 
 ## 应用定位
 
@@ -14,31 +14,31 @@
 
 ## 功能特点
 
-- **智能搜索判断**：自动分析研究课题，判断是否需要联网获取最新信息
-- **联网搜索**：集成 Tavily 搜索引擎，获取高质量的网络资源
+- **Agent 自主决策**：LLM 通过 `bind_tools` 自主判断何时调用搜索工具
+- **MCP 协议集成**：使用 Tavily 官方远程 MCP Server，标准化工具调用
+- **联网搜索**：获取高质量的网络资源（tavily-search、tavily-extract 等工具）
 - **结构化总结**：使用 DeepSeek 模型生成 Markdown 格式的详细研究总结
-- **有状态工作流**：基于 LangGraph 构建的灵活工作流系统
+- **有状态工作流**：基于 LangGraph 构建的灵活 Agent 工作流系统
 
 ## 需求规划 (Roadmap)
 
-### 第一阶段：智能情报员（已完成）
+### 第一阶段：Agent 模式 + MCP（进行中）
 
 #### 核心功能
 
-1. **智能决策路由**
-   - 自动分析用户问题，判断是"纯知识问答"还是"需要联网搜索"
-   - 使用 Pydantic 模型确保输出格式一致性：`{"action": "search" | "direct_answer", "queries": ["关键词1", "关键词2"], "reason": "决策理由"}`
-   - 自动拆解 2-3 个精准的搜索关键词，提高搜索质量
+1. **Agent 自主决策**
+   - LLM 通过 `bind_tools` 绑定 MCP 工具
+   - 自主判断是否需要调用搜索工具，无需显式 Router 节点
+   - 支持多轮工具调用，灵活应对复杂查询
 
-2. **并发搜索增强**
-   - 异步并发处理多个搜索关键词，提高搜索效率
-   - 使用 `TavilySearch(max_results=3)` 获取高质量搜索结果
-   - 聚合搜索结果，保留 `title`、`url`、`content` 字段，确保信息完整性
+2. **MCP 工具集成**
+   - 连接 Tavily 官方远程 MCP Server (`https://mcp.tavily.com/mcp/`)
+   - 使用 `langchain-mcp-adapters` 实现 MCP 协议对接
+   - 提供 tavily-search、tavily-extract、tavily-map、tavily-crawl 等工具
 
 3. **专业报告生成**
    - 设定 DeepSeek 为"首席技术分析师"角色，提供专业分析
    - 输出标准化报告：包含核心结论 (Executive Summary)、详细分析 (Detailed Analysis) 和来源引用 (References)
-   - 支持无搜索结果时直接基于模型内置知识库进行高水平回复
 
 4. **思考轨迹追踪**
    - 记录完整的执行步骤，形成可追溯的思考轨迹
@@ -46,19 +46,19 @@
 
 #### 技术实现
 
-1. **结构化输出**：使用 `PydanticOutputParser` 确保模型输出格式的一致性和可靠性
-2. **异步工作流**：基于 LangGraph 构建异步工作流，使用 `await app.ainvoke()` 处理网络请求
-3. **错误处理**：完善的异常捕获机制，确保系统稳定性
-4. **状态管理**：扩展 `AgentState` 增加 `queries` 和 `steps` 字段，实现完整的状态追踪
+1. **Agent 模式**：使用 LangGraph 标准 Agent 工作流，包含 Agent 节点、工具条件判断、工具执行节点
+2. **MCP 集成**：使用 `langchain-mcp-adapters` 连接 MCP Server，获取工具列表
+3. **异步工作流**：基于 LangGraph 构建异步工作流，使用 `await app.ainvoke()` 处理
+4. **状态管理**：AgentState 包含 `messages` 字段存储对话历史，实现完整的状态追踪
 
 #### 代码结构
 
-- **Router 节点**：`router()` 函数，负责智能决策和关键词拆解
-- **Search 节点**：`search_web()` 函数，负责异步并发搜索
-- **Summarize 节点**：`summarize()` 函数，负责生成专业报告
-- **工作流定义**：基于 LangGraph 的状态图，实现节点间的条件流转
+- **Agent 节点**：LLM + bind_tools，负责自主决策
+- **Tool 节点**：执行 MCP 工具调用
+- **Summarize 节点**：生成专业报告
+- **工作流定义**：基于 LangGraph 的 Agent 模式，实现工具调用循环
 
-### 第二阶段：私有上下文感知（接入 MCP）
+### 第二阶段：私有上下文感知（接入 MCP Filesystem）
 - **核心功能**：通过 MCP Filesystem Server，让 Agent 具备 `read_file` 和 `list_directory` 能力
 - **应用**：你可以问"结合我 main.py 里的 AgentState 定义，帮我从网上找一个最适合的持久化存储方案"
 
@@ -78,50 +78,74 @@
 
 ### 核心节点逻辑设计
 
-#### Router (决策者)：
-- 判断任务类型：是"纯知识问答"还是"需要联网"？
-- 使用 PydanticOutputParser 进行结构化输出
-- 输出格式：包含 action (search/direct_answer)、queries (搜索关键词列表) 和 reason (决策理由)
-- 自动拆解 2-3 个精准的搜索关键词
+#### Agent (决策者)：
+- LLM 通过 `bind_tools` 绑定 MCP 工具
+- 自主判断任务类型：是"直接回答"还是"需要调用工具"
+- 支持多轮工具调用，灵活应对复杂查询
 
-#### Search Node (外部执行器)：
-- 异步并发处理多个搜索关键词
-- 使用 TavilySearch 获取高质量搜索结果
-- 聚合搜索结果，保留 title、url、content 字段
+#### Tool Node (工具执行器)：
+- 执行 MCP 工具调用（tavily-search、tavily-extract 等）
+- 异步执行工具，确保性能
+- 完善的异常捕获机制
 
 #### Summarize Node (汇总者)：
 - 设定 DeepSeek 为"首席技术分析师"角色
 - 输出包含核心结论、详细分析和来源引用的专业报告
-- 支持有搜索结果和无搜索结果两种模式
 
 ### 技术优势
 
-- **结构化输出**：使用 Pydantic 确保输出格式的一致性和可靠性
-- **异步执行**：使用 LangGraph 的异步 API 处理网络请求，提高性能
+- **Agent 模式**：LLM 自主决策，更灵活智能
+- **MCP 标准化**：统一的工具协议，易于扩展更多 MCP Server
+- **异步执行**：使用 LangGraph 的异步 API，提高性能
 - **错误处理**：完善的异常处理机制，确保系统稳定性
-- **智能路由**：基于问题性质自动选择最佳处理策略
 
 ## 项目结构
 
 ```
 my-ai-agent/
-├── main.py           # 主程序入口
-├── pyproject.toml    # 项目配置和依赖管理
-├── uv.lock           # 依赖锁定文件
-├── .python-version   # Python 版本管理
-├── .env             # 环境变量配置（不提交到 Git）
-├── .gitignore       # Git 忽略文件
-└── README.md        # 项目说明文档
+├── main.py                 # 主程序入口
+├── pyproject.toml          # 项目配置和依赖管理
+├── uv.lock                 # 依赖锁定文件
+├── .python-version         # Python 版本管理
+├── .env                    # 环境变量配置（不提交到 Git）
+├── .gitignore              # Git 忽略文件
+├── README.md               # 项目说明文档
+├── .trae/
+│   └── rules/
+│       └── my-ai-agent.md  # 项目开发规则
+├── src/
+│   ├── __init__.py
+│   ├── state.py            # Agent 状态定义
+│   ├── graph.py            # LangGraph 工作流编排
+│   ├── models/
+│   │   └── __init__.py     # 模型和工具配置
+│   ├── nodes/
+│   │   ├── __init__.py
+│   │   ├── router.py       # 路由节点（即将移除）
+│   │   ├── search.py       # 搜索节点（即将移除）
+│   │   └── summarizer.py   # 总结节点
+│   └── prompts/
+│       ├── __init__.py
+│       ├── router_prompt.py
+│       └── summarize_prompt.py
+└── tests/
+    ├── __init__.py
+    ├── test_graph.py
+    ├── test_nodes.py
+    ├── test_prompts.py
+    └── test_state.py
 ```
 
 ## 技术栈
 
 - **LangGraph**: 构建有状态的 Agent 工作流
 - **LangChain OpenAI**: 与 DeepSeek API 交互
-- **LangChain Core**: 提供核心功能，包括 PydanticOutputParser
-- **Tavily Search**: 联网搜索工具
+- **LangChain Core**: 提供核心功能
+- **langchain-mcp-adapters**: LangChain 官方 MCP 适配器
+- **mcp**: Python 官方 MCP 客户端库
+- **Tavily MCP Server**: 联网搜索工具（官方远程服务）
 - **Python Dotenv**: 环境变量管理
-- **Pydantic**: 用于定义数据模型和结构化输出
+- **Pydantic**: 用于定义数据模型
 
 ## 快速开始
 
@@ -171,15 +195,21 @@ python main.py
 ```
 用户输入
     ↓
-[Router 智能决策] → 搜索 → [Search 并发搜索] → [Summarize 专业总结] → 结束
-    ↓ 直接回答
-[Summarize 专业总结] → 结束
+[Agent 自主决策]
+    ↓
+[tools_condition 判断]
+    ↙          ↘
+[调用工具]  [直接回答]
+    ↓            ↓
+[Tool 执行]  [Summarize 总结]
+    ↓            ↓
+回到 Agent    结束
 ```
 
 ## 核心节点
 
-1. **router**: 使用 PydanticOutputParser 分析课题，决定处理策略并拆解搜索关键词
-2. **search_web**: 异步并发处理多个搜索关键词，获取高质量搜索结果
+1. **agent**: LLM + bind_tools，自主决策是否调用工具
+2. **tool_node**: 执行 MCP 工具调用（tavily-search 等）
 3. **summarize**: 以"首席技术分析师"角色生成包含核心结论、详细分析和来源引用的专业报告
 
 ## 愿景

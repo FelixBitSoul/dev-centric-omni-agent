@@ -1,10 +1,8 @@
-from typing import Dict, Any, Optional, List, TypedDict
+from typing import Dict, Any, List, TypedDict
+from langchain_core.messages import BaseMessage
 
 
 class AgentState(TypedDict):
     topic: str
-    router_decision: Optional[Dict[str, Any]]
-    queries: Optional[List[str]]
-    search_results: Optional[List[Dict[str, Any]]]
-    summary: Optional[str]
+    messages: List[BaseMessage]
     steps: List[str]

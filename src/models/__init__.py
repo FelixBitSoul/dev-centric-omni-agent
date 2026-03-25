@@ -1,23 +1,13 @@
 import os
+from typing import List, Optional
 
 from langchain_openai import ChatOpenAI
-from langchain_tavily import TavilySearch
-from pydantic import BaseModel
-from typing import List, Optional
-from langchain_core.output_parsers import PydanticOutputParser
-
-
-class RouterDecision(BaseModel):
-    action: str
-    queries: List[str]
-    reason: str
-
-
-router_parser = PydanticOutputParser(pydantic_object=RouterDecision)
+from langchain_core.tools import BaseTool
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
 
 _deepseek_model: Optional[ChatOpenAI] = None
-_tavily_search: Optional[TavilySearch] = None
+_mcp_tools: Optional[List[BaseTool]] = None
 
 
 def get_deepseek_model() -> ChatOpenAI:
@@ -31,11 +21,28 @@ def get_deepseek_model() -> ChatOpenAI:
     return _deepseek_model
 
 
-def get_tavily_search() -> TavilySearch:
-    global _tavily_search
-    if _tavily_search is None:
-        _tavily_search = TavilySearch()
-    return _tavily_search
+async def get_mcp_tools() -> List[BaseTool]:
+    global _mcp_tools
+    if _mcp_tools is None:
+        tavily_api_key = os.getenv("TAVILY_API_KEY")
+        mcp_url = f"https://mcp.tavily.com/mcp/?tavilyApiKey={tavily_api_key}"
+        
+        client = MultiServerMCPClient({
+            "tavily": {
+                "transport": "http",
+                "url": mcp_url
+            }
+        })
+        
+        async with client as mcp_client:
+            _mcp_tools = await mcp_client.get_tools()
+    
+    return _mcp_tools
+
+
+def get_agent_model(tools: List[BaseTool]) -> ChatOpenAI:
+    model = get_deepseek_model()
+    return model.bind_tools(tools)
 
 
 def clear_deepseek_model():
@@ -43,6 +50,6 @@ def clear_deepseek_model():
     _deepseek_model = None
 
 
-def clear_tavily_search():
-    global _tavily_search
-    _tavily_search = None
+def clear_mcp_tools():
+    global _mcp_tools
+    _mcp_tools = None
