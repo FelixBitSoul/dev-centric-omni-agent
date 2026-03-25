@@ -2,16 +2,20 @@ import asyncio
 
 from dotenv import load_dotenv
 
-from src.graph import create_graph
+from src.agent import create_agent, run_agent as run_agent_task
 
 load_dotenv()
 
 
-async def run_agent():
-    print("=== DeepSeek 智能联网 Agent (MCP 版) ===")
+async def main():
+    print("=== DeepSeek 智能联网 Agent (ReAct + MCP) ===")
+    print("使用 LangGraph create_react_agent 构建\n")
     print("输入 'exit' 或 '退出' 结束对话\n")
     
-    app = await create_graph()
+    # 创建 Agent
+    print("\033[94m[初始化]\033[0m 正在初始化 Agent...")
+    agent = await create_agent()
+    print("\033[94m[初始化]\033[0m Agent 初始化完成\n")
 
     while True:
         topic = input("请输入研究课题：")
@@ -21,30 +25,23 @@ async def run_agent():
 
         print(f"\n研究课题：{topic}")
 
-        inputs = {"topic": topic, "steps": [], "messages": []}
-        final_state = inputs
-
-        async for event in app.astream(inputs, {"configurable": {}}, stream_mode="updates"):
-            for node_name, output in event.items():
-                final_state.update(output)
-
-                if node_name == "agent":
-                    print(f"\n\033[94m[Agent]\033[0m 正在思考...")
-
-                elif node_name == "tools":
-                    print(f"\n\033[92m[Tool]\033[0m 正在执行工具调用...")
-
-        print("\n\n=== 最终回答 ===")
-        messages = final_state.get("messages", [])
-        if messages:
-            last_message = messages[-1]
-            print(last_message.content)
+        # 运行 Agent
+        result = await run_agent_task(agent, topic)
         
-        print("\n=== 思考轨迹 ===")
-        for i, step in enumerate(final_state.get("steps", []), 1):
+        print("\n\n=== 最终回答 ===")
+        messages = result.get("messages", [])
+        if messages:
+            # 获取最后一个 AI 消息
+            for msg in reversed(messages):
+                if hasattr(msg, 'content'):
+                    print(msg.content)
+                    break
+        
+        print("\n=== 执行步骤 ===")
+        for i, step in enumerate(result.get("steps", []), 1):
             print(f"{i}. {step}")
         print("\n" + "="*30 + "\n")
 
 
 if __name__ == "__main__":
-    asyncio.run(run_agent())
+    asyncio.run(main())

@@ -1,3 +1,3 @@
-from src.nodes.agent import agent_node
+# 空文件，因为使用 create_react_agent 不再需要自定义节点
 
-__all__ = ["agent_node"]
+__all__ = []
