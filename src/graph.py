@@ -13,9 +13,12 @@ async def create_graph():
     model = get_agent_model(tools)
     tool_node = ToolNode(tools)
     
+    async def agent_wrapper(state, config):
+        return await agent_node(state, config, model)
+    
     workflow = StateGraph(AgentState)
     
-    workflow.add_node("agent", agent_node)
+    workflow.add_node("agent", agent_wrapper)
     workflow.add_node("tools", tool_node)
     
     workflow.set_entry_point("agent")
@@ -38,7 +41,6 @@ async def create_graph():
     workflow.add_edge("tools", "agent")
     
     app = workflow.compile()
-    app.config = {"model": model}
     
     return app
 

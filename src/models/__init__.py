@@ -34,8 +34,7 @@ async def get_mcp_tools() -> List[BaseTool]:
             }
         })
         
-        async with client as mcp_client:
-            _mcp_tools = await mcp_client.get_tools()
+        _mcp_tools = await client.get_tools()
     
     return _mcp_tools
 

@@ -24,7 +24,7 @@ async def run_agent():
         inputs = {"topic": topic, "steps": [], "messages": []}
         final_state = inputs
 
-        async for event in app.astream(inputs, stream_mode="updates"):
+        async for event in app.astream(inputs, {"configurable": {}}, stream_mode="updates"):
             for node_name, output in event.items():
                 final_state.update(output)
 
