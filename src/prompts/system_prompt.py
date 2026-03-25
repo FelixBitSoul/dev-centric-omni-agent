@@ -1,6 +1,6 @@
 def get_system_prompt() -> str:
     """
-    获取 ReAct Agent 系统提示词
+    获取 Agent 系统提示词
     
     Returns:
         str: 系统提示词
@@ -13,7 +13,7 @@ def get_system_prompt() -> str:
 3. 给出包含核心结论、详细分析和来源引用的完整报告
 4. 如果已有足够信息，直接给出专业分析
 
-请使用 ReAct（Reasoning + Acting）模式：
+请使用（Reasoning + Acting）模式：
 - 思考：分析问题，决定是否需要工具
 - 行动：如果需要，调用适当的工具
 - 观察：分析工具返回的结果
