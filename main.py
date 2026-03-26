@@ -30,7 +30,12 @@ async def main():
         if not topic:
             continue
 
-        inputs = {"messages": [("user", topic)]}
+        # inputs = {"messages": [("user", topic)]}
+        inputs = {
+            "messages": [
+                {"role": "user", "content": topic}
+            ]
+        }
         config = {"configurable": {"thread_id": "session_1"}}
         async for event in app.astream_events(inputs, config=config, version="v2"):
             kind = event["event"]

@@ -1,7 +1,10 @@
+from datetime import datetime
 from typing import Any
 
-from langchain.agents import create_agent
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import ToolMessage, SystemMessage
+from langgraph.constants import START, END
+from langgraph.graph import MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
 
 from src.models import get_tools, get_model
 
@@ -48,17 +51,41 @@ async def create_graph() -> Any:
     print(f"\033[94m[Agent Builder]\033[0m 获取到 {len(tools)} 个工具")
 
     # 2. 获取模型并绑定工具
-    model = get_model()
+    model = await get_model()
 
-    # 使用 create_agent，并通过 state_modifier 注入清洗逻辑
-    # 在 2026 年的标准中，state_modifier 可以是一个处理函数
-    app = create_agent(
-        model,
-        tools=tools,
-        debug=True,
-        # 这里的函数会在每一轮 Agent 思考前运行，确保消息格式永远正确
-        # state_modifier=cleanup_tool_outputs,
-    )
+    # 4. 构建 LangGraph 流程
+
+    async def call_model(state: MessagesState):
+        # 1. 【核心最佳实践】动态生成包含当前时间的 SystemMessage
+        # 无论你哪天运行这个代码，它都会获取真实的系统当前时间
+        current_time_str = datetime.now().strftime("%Y年%m月%d日 %A")
+
+        system_prompt = SystemMessage(
+            content=(
+                "你是一个高级 AI 助手。"
+                f"【重要上下文】当前系统真实时间是：{current_time_str}。"
+                "请务必以此时间作为你进行逻辑推理、联网搜索和回答问题的基准事实。"
+                "如果搜索工具返回了符合当前年份的数据，请直接采纳，绝对不要试图将其修正为你在训练数据中记忆的过去年份（如2023或2024）。"
+            )
+        )
+        # 在调用模型前，先清洗一遍状态中的消息
+        response = await model.ainvoke([system_prompt] + state["messages"])
+        return {"messages": [response]}
+
+    def should_continue(state: MessagesState):
+        last_message = state["messages"][-1]
+        return "tools" if last_message.tool_calls else END
+
+    # 组装图
+    workflow = StateGraph(MessagesState)
+    workflow.add_node("agent", call_model)
+    workflow.add_node("tools", ToolNode(tools))
+
+    workflow.add_edge(START, "agent")
+    workflow.add_conditional_edges("agent", should_continue)
+    workflow.add_edge("tools", "agent")
+
+    app = workflow.compile()
 
     print("\033[94m[Agent Builder]\033[0m Agent 创建成功")
 
