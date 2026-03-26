@@ -55,6 +55,7 @@ async def create_graph() -> Any:
     app = create_agent(
         model,
         tools=tools,
+        debug=True,
         # 这里的函数会在每一轮 Agent 思考前运行，确保消息格式永远正确
         # state_modifier=cleanup_tool_outputs,
     )
