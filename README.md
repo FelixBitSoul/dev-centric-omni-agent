@@ -84,7 +84,6 @@ The goal is a personal developer research agent with a minimal but valuable feat
 
 ## Next steps
 
-- Add unit and integration tests for `get_tools`, `create_graph`, and `main` flow
 - Add expanded examples and sample output in docs
 
 ## License
