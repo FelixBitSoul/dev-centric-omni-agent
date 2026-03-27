@@ -4,7 +4,7 @@ from langchain_core.messages import SystemMessage
 from langgraph.constants import END
 from langgraph.graph import MessagesState
 
-from src.models import get_model
+from dev_centric_omni_agent.models import get_model
 
 
 async def call_model(state: MessagesState):

@@ -1,5 +1,5 @@
 [project]
-name = "my-ai-agent"
+name = "dev-centric-omni-agent"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -15,6 +15,9 @@ dependencies = [
     "langchain-mcp-adapters>=0.1.0",
     "mcp>=1.0.0",
 ]
+
+[project.scripts]
+app = "dev_centric_omni_agent.main:main"
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"

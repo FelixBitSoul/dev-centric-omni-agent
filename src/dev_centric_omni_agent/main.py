@@ -2,12 +2,12 @@ import asyncio
 
 from dotenv import load_dotenv
 
-from src.graph import create_graph
+from dev_centric_omni_agent.graph import create_graph
 
 load_dotenv()
 
 
-async def main():
+async def amain():
     print("=== start dev centric omni agent assistant ===")
     print("输入 'exit' 或 '退出' 结束对话\n")
 
@@ -57,6 +57,8 @@ async def main():
 
         print("\n" + "=" * 20 + "\n")
 
+def main():
+    asyncio.run(amain())
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
