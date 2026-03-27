@@ -80,8 +80,6 @@ The goal is a personal developer research agent with a minimal but valuable feat
 ## Next steps
 
 - Add unit and integration tests for `get_tools`, `create_graph`, and `main` flow
-- Use `src/state.py` for explicit agent state modeling
-- Clean up or remove legacy files in `src/nodes` (`router.py` / `search.py`)
 - Add expanded examples and sample output in docs
 
 ## License

@@ -74,8 +74,6 @@ python main.py
 ## 未来优化建议
 
 - 增加 `tests/` 单元 + 集成用例：`get_tools`、`create_graph`、`main` 交互
-- 迁移 `AgentState` 理念到 `src/state.py`（当前未使用）
-- 补全 `src/nodes`
 - 增加完整 `README` 运行示例与输出样本
 
 ## 许可
