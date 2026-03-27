@@ -29,7 +29,6 @@ Agent 能力：
 1. 安装依赖：
 
 ```bash
-pip install uv
 uv sync
 ```
 
@@ -43,12 +42,19 @@ TAVILY_API_KEY=your_tavily_api_key_here
 3. 运行：
 
 ```bash
-python main.py
+uv run app
 ```
 
 4. 使用：
 - 输入文本，回车后 Agent 处理并输出模型/工具流水
 - 输入 `exit` 或 `退出` 结束
+
+## 运行测试
+
+```bash
+cd cd path/to/your-project
+uv run pytest -q
+```
 
 ## 核心文件说明
 

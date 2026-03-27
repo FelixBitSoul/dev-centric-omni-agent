@@ -4,8 +4,8 @@ from types import SimpleNamespace
 from langgraph.constants import END
 from langchain_core.messages import ToolMessage
 
-from src.nodes.agent import call_model, should_continue
-from src.nodes.tool import cleanup_tool_outputs
+from dev_centric_omni_agent.nodes.agent import call_model, should_continue
+from dev_centric_omni_agent.nodes.tool import cleanup_tool_outputs
 
 
 def test_should_continue_no_tool_calls():
@@ -45,7 +45,7 @@ async def test_call_model_with_mocked_model(monkeypatch):
     async def dummy_get_model():
         return DummyModel()
 
-    monkeypatch.setattr("src.nodes.agent.get_model", dummy_get_model)
+    monkeypatch.setattr("dev_centric_omni_agent.nodes.agent.get_model", dummy_get_model)
 
     state = {"messages": [SimpleNamespace(content="hi")]}
     result = await call_model(state)

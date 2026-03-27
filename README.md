@@ -35,7 +35,6 @@ This repository implements a lightweight Agent based on **LangGraph**, currently
 1. Install dependencies:
 
 ```bash
-pip install uv
 uv sync
 ```
 
@@ -49,12 +48,18 @@ TAVILY_API_KEY=your_tavily_api_key_here
 3. Run:
 
 ```bash
-python main.py
+uv run app
 ```
 
 4. Use:
 - Enter a query; the agent decides whether to call tools and returns a result
 - Enter `exit` or `退出` to quit
+## Run tests
+
+```bash
+cd path/to/your-project
+uv run pytest -q
+```
 
 ## Core files
 
