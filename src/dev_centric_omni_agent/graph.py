@@ -4,7 +4,6 @@ from langgraph.constants import START
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.prebuilt import ToolNode
 
-from dev_centric_omni_agent.models import get_model
 from dev_centric_omni_agent.models import get_tools
 from dev_centric_omni_agent.nodes import call_model
 from dev_centric_omni_agent.nodes import should_continue
@@ -23,10 +22,7 @@ async def create_graph() -> Any:
     tools = await get_tools()
     print(f"\033[94m[Agent Builder]\033[0m 获取到 {len(tools)} 个工具")
 
-    # 2. 获取模型并绑定工具
-    model = await get_model()
-
-    # 4. 构建 LangGraph 流程
+    # 2. 构建 LangGraph 流程
 
     # 组装图
     workflow = StateGraph(MessagesState)
